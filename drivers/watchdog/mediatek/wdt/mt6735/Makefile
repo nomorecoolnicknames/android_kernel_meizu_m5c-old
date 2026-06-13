@@ -1,4 +1,6 @@
-ccflags-y += -I$(srctree)/drivers/watchdog/mediatek/include	\
+ccflags-y += -I$(srctree)/drivers/watchdog/mediatek/wdt/mt6735 \
+			 -I$(srctree)/drivers/watchdog/mediatek/wdt/common \
+			 -I$(srctree)/drivers/watchdog/mediatek/include	\
 			 -I$(srctree)/drivers/misc/mediatek/multibridge/mt6735/mt8193/inc
 
 #obj-$(CONFIG_LOCAL_WDT) += mpcore_wdt.o

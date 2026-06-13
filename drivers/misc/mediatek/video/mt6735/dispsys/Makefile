@@ -1,10 +1,16 @@
 # drivers/dispsys
 
-ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/include/ \
+MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include \
+             -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include \
+             -I$(srctree)/drivers/misc/mediatek/include/mt-plat \
+             -I$(srctree)/drivers/misc/mediatek/video/include/ \
              -I$(srctree)/drivers/misc/mediatek/video/common/ \
              -I$(srctree)/drivers/misc/mediatek/video/common/rdma10/ \
              -I$(srctree)/drivers/misc/mediatek/video/common/wdma10/ \
              -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/videox/ \
+             -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/dispsys/ \
              -I$(srctree)/drivers/misc/mediatek/cmdq/v2/ \
              -I$(srctree)/drivers/misc/mediatek/cmdq/v2/$(MTK_PLATFORM)/ \
              -I$(srctree)/drivers/misc/mediatek/base/power/mt6735/ \

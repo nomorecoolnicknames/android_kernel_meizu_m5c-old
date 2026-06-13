@@ -2866,7 +2866,7 @@ bool Get_Cam_Regulator(void)
 				sensor_device->of_node =
 				    of_find_compatible_node(NULL, NULL,
 							    "mediatek,camera_hw");
-				/* ≠YßAª›≠nsub§]©w∏q™∫∏‹°Aª›≠n¶€§v•[§W
+				/* Ëã•‰Ω†ÈúÄË¶Åsub‰πüÂÆöÁæ©ÁöÑË©±ÔºåÈúÄË¶ÅËá™Â∑±Âä†‰∏ä
 				   if (regVCAMA == NULL) {
 				   regVCAMA_SUB = regulator_get(sensor_device, "SUB_CAMERA_POWER_A");
 				   }
@@ -4347,6 +4347,30 @@ static struct file_operations fcamera_proc_fops1 = {
 	.open = proc_camera_info_open,
 	.read = seq_read,
 };
+
+static char back_otp_checksum_info[20] = {0};
+static char front_otp_checksum_info[20] = {0};
+
+void mtk_eeprom_hw_otp_check_set(char *name, int otp_flag)
+{
+        pr_err("%s %d\n", __func__,__LINE__);
+        if(!strcmp("back",name)){
+                memset(back_otp_checksum_info,0,20*sizeof(char));
+                if (otp_flag == 0) {
+                        snprintf(back_otp_checksum_info,12,"%s","otp:back_ok\n");
+                } else {
+                        snprintf(back_otp_checksum_info,13,"%s","otp:back_err\n");
+                }
+        }else{
+                memset(front_otp_checksum_info,0,20*sizeof(char));
+                if (otp_flag == 0) {
+                        snprintf(front_otp_checksum_info,13,"%s","otp:front_ok\n");
+                } else {
+                        snprintf(front_otp_checksum_info,14,"%s","otp:front_err\n");
+                }
+        }
+}
+EXPORT_SYMBOL(mtk_eeprom_hw_otp_check_set);
 
 /*=======================================================================
   * CAMERA_HW_i2C_init()

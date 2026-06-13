@@ -1,6 +1,11 @@
 # drivers/dispsys/mt6735m
 
-ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/include/ \
+MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include \
+             -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include \
+             -I$(srctree)/drivers/misc/mediatek/include/mt-plat \
+             -I$(srctree)/drivers/misc/mediatek/video/include/ \
              -I$(srctree)/drivers/misc/mediatek/video/common/   \
              -I$(srctree)/drivers/misc/mediatek/video/common/rdma10/ \
              -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/videox/ \

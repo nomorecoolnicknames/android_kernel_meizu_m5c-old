@@ -573,7 +573,38 @@ static void lcm_update(unsigned int x, unsigned int y,
 
 static unsigned int lcm_compare_id(void)
 {
-	return 1;
+	unsigned char id[2]={0};
+	unsigned char buffer[2];
+	unsigned int array[16];
+
+	SET_RESET_PIN(1);
+	MDELAY(20);
+	SET_RESET_PIN(0);
+	MDELAY(20);
+	SET_RESET_PIN(1);
+	MDELAY(120);
+
+	array[0] = 0x00013700;
+	dsi_set_cmdq(array, 1, 1);
+
+	MDELAY(10);
+	read_reg_v2(0xDA, buffer, 1);
+	id[0] = buffer[0];
+
+	read_reg_v2(0xDB, buffer, 1);
+	id[1] = buffer[0];
+
+	LCD_DEBUG("[jd9365-holitech]: %s, line%d, id0=%x\n", __func__, __LINE__, id[0]);
+	LCD_DEBUG("[jd9365-holitech]: %s, line%d, id1=%x\n", __func__, __LINE__, id[1]);
+
+	if (id[0] == 0x93 && id[1] == 0x65)
+	{
+		LCD_DEBUG("[jd9365-holitech]: read id success !\n");
+		return 1;
+	}
+
+	LCD_DEBUG("[jd9365-holitech]: read id fail !\n");
+	return 0;
 }
 
 LCM_DRIVER jd9365_dsi_vdo_holitech_hd720_lcm_drv = 
@@ -582,5 +613,6 @@ LCM_DRIVER jd9365_dsi_vdo_holitech_hd720_lcm_drv =
 	.set_util_funcs		= lcm_set_util_funcs,
 	.get_params		= lcm_get_params,
 	.init			= lcm_init,
+	.compare_id		= lcm_compare_id,
 };
 

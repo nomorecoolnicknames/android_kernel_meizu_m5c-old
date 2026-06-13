@@ -1870,12 +1870,6 @@ static int range_read(struct policydb *p, void *fp)
 		} else
 			rt->target_class = p->process_class;
 
-		rc = -EINVAL;
-		if (!policydb_type_isvalid(p, rt->source_type) ||
-		    !policydb_type_isvalid(p, rt->target_type) ||
-		    !policydb_class_isvalid(p, rt->target_class))
-			goto out;
-
 		rc = -ENOMEM;
 		r = kzalloc(sizeof(*r), GFP_KERNEL);
 		if (!r)
@@ -1885,10 +1879,16 @@ static int range_read(struct policydb *p, void *fp)
 		if (rc)
 			goto out;
 
-		rc = -EINVAL;
-		if (!mls_range_isvalid(p, r)) {
-			printk(KERN_WARNING "SELinux:  rangetrans:  invalid range\n");
-			goto out;
+		if (!policydb_type_isvalid(p, rt->source_type) ||
+		    !policydb_type_isvalid(p, rt->target_type) ||
+		    !policydb_class_isvalid(p, rt->target_class) ||
+		    !mls_range_isvalid(p, r)) {
+			// Skip and ignore invalid range transitions
+			kfree(rt);
+			kfree(r);
+			rt = NULL;
+			r = NULL;
+			continue;
 		}
 
 		rc = hashtab_insert(p->range_tr, rt, r);
@@ -2390,10 +2390,6 @@ int policydb_read(struct policydb *p, void *fp)
 		tr = kzalloc(sizeof(*tr), GFP_KERNEL);
 		if (!tr)
 			goto bad;
-		if (ltr)
-			ltr->next = tr;
-		else
-			p->role_tr = tr;
 		rc = next_entry(buf, fp, sizeof(u32)*3);
 		if (rc)
 			goto bad;
@@ -2413,8 +2409,15 @@ int policydb_read(struct policydb *p, void *fp)
 		if (!policydb_role_isvalid(p, tr->role) ||
 		    !policydb_type_isvalid(p, tr->type) ||
 		    !policydb_class_isvalid(p, tr->tclass) ||
-		    !policydb_role_isvalid(p, tr->new_role))
-			goto bad;
+		    !policydb_role_isvalid(p, tr->new_role)) {
+			// Skip and ignore invalid role transitions
+			kfree(tr);
+			continue;
+		}
+		if (ltr)
+			ltr->next = tr;
+		else
+			p->role_tr = tr;
 		ltr = tr;
 	}
 
@@ -2428,10 +2431,6 @@ int policydb_read(struct policydb *p, void *fp)
 		ra = kzalloc(sizeof(*ra), GFP_KERNEL);
 		if (!ra)
 			goto bad;
-		if (lra)
-			lra->next = ra;
-		else
-			p->role_allow = ra;
 		rc = next_entry(buf, fp, sizeof(u32)*2);
 		if (rc)
 			goto bad;
@@ -2440,8 +2439,15 @@ int policydb_read(struct policydb *p, void *fp)
 		ra->role = le32_to_cpu(buf[0]);
 		ra->new_role = le32_to_cpu(buf[1]);
 		if (!policydb_role_isvalid(p, ra->role) ||
-		    !policydb_role_isvalid(p, ra->new_role))
-			goto bad;
+		    !policydb_role_isvalid(p, ra->new_role)) {
+			// Skip and ignore invalid role allows
+			kfree(ra);
+			continue;
+		}
+		if (lra)
+			lra->next = ra;
+		else
+			p->role_allow = ra;
 		lra = ra;
 	}
 

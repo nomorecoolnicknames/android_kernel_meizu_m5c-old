@@ -450,13 +450,6 @@ int avtab_read_item(struct avtab *a, void *fp, struct policydb *pol,
 	key.target_class = le16_to_cpu(buf16[items++]);
 	key.specified = le16_to_cpu(buf16[items++]);
 
-	if (!policydb_type_isvalid(pol, key.source_type) ||
-	    !policydb_type_isvalid(pol, key.target_type) ||
-	    !policydb_class_isvalid(pol, key.target_class)) {
-		printk(KERN_ERR "SELinux: avtab: invalid type or class\n");
-		return -EINVAL;
-	}
-
 	set = 0;
 	for (i = 0; i < ARRAY_SIZE(spec_order); i++) {
 		if (key.specified & spec_order[i])
@@ -491,10 +484,18 @@ int avtab_read_item(struct avtab *a, void *fp, struct policydb *pol,
 			ops.op.perms[i] = le32_to_cpu(buf32[i]);
 		datum.u.ops = &ops;
 	}
+
+	if (!policydb_type_isvalid(pol, key.source_type) ||
+	    !policydb_type_isvalid(pol, key.target_type) ||
+	    !policydb_class_isvalid(pol, key.target_class)) {
+		// Ignore rules with invalid source/target type or target class (common when booting newer Android on older kernels)
+		return 0;
+	}
+
 	if ((key.specified & AVTAB_TYPE) &&
 	    !policydb_type_isvalid(pol, datum.u.data)) {
-		printk(KERN_ERR "SELinux: avtab: invalid type\n");
-		return -EINVAL;
+		// Ignore invalid type transition rules
+		return 0;
 	}
 	return insertf(a, &key, &datum, p);
 }

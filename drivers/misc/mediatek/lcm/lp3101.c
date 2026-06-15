@@ -40,6 +40,10 @@ EXPORT_SYMBOL(tps65132_write_bytes);
 void lcd_bais_enn_enable(char enable)
 {
 	int ret;
+	if (!lp3101_pinctrl || IS_ERR(lp3101_pinctrl)) {
+		pr_err("[lp3101] pinctrl is not initialized for ENN enable!\n");
+		return;
+	}
 	if (enable) {
 		if (state_enn_high && !IS_ERR(state_enn_high)) {
 			ret = pinctrl_select_state(lp3101_pinctrl, state_enn_high);
@@ -69,6 +73,10 @@ EXPORT_SYMBOL(lcd_bais_enn_enable);
 void lcd_bais_enp_enable(char enable)
 {
 	int ret;
+	if (!lp3101_pinctrl || IS_ERR(lp3101_pinctrl)) {
+		pr_err("[lp3101] pinctrl is not initialized for ENP enable!\n");
+		return;
+	}
 	if (enable) {
 		if (state_enp_high && !IS_ERR(state_enp_high)) {
 			ret = pinctrl_select_state(lp3101_pinctrl, state_enp_high);
@@ -135,10 +143,13 @@ static struct i2c_driver lp3101_i2c_driver = {
 
 static int lp3101_pinctrl_probe(struct platform_device *pdev)
 {
-	lp3101_pinctrl = devm_pinctrl_get(&pdev->dev);
-	if (IS_ERR(lp3101_pinctrl)) {
-		return PTR_ERR(lp3101_pinctrl);
+	struct pinctrl *p = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(p)) {
+		pr_err("[lp3101] devm_pinctrl_get failed: %ld\n", PTR_ERR(p));
+		lp3101_pinctrl = NULL;
+		return PTR_ERR(p);
 	}
+	lp3101_pinctrl = p;
 
 	state_enn_low = pinctrl_lookup_state(lp3101_pinctrl, "lcd_bias_enn_low");
 	state_enn_high = pinctrl_lookup_state(lp3101_pinctrl, "lcd_bias_enn_high");

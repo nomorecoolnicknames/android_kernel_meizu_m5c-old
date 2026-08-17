@@ -126,14 +126,13 @@ extern unsigned char gtp_default_FW_fl[];
 #define GTP_DEBUG_FUNC_ON     0
 */
 
-/* forge (m5c): the Goodix panel is mounted rotated 180 degrees relative to this
- * driver's default axes -- verified on hardware (touch landed point-symmetric to
- * the finger). These two make gt9xx_driver.c mirror both axes via
- * TPD_WARP_X(x_max, x) = x_max - 1 - x and the same for Y. Note the pair of
- * //#define lines further up sits inside a block comment and has no effect.
+/* forge (m5c): the panel is mounted rotated 180 degrees, but the rotation is
+ * already done by tpd_calibrate() via TPD_CALIBRATION_MATRIX_ROTATION_NORMAL in
+ * include/config_default/gt9xx_config.h. Enabling TPD_WARP_X/Y here as well
+ * applied a second inversion: the two cancelled out and left a constant
+ * +(800-719) px offset in X, seen on hardware as touch shifted ~85 px right.
+ * Keep them off - one rotation only.
  */
-#define TPD_WARP_X
-#define TPD_WARP_Y
 #define CFG_GROUP_LEN(p_cfg_grp)  (sizeof(p_cfg_grp) / sizeof(p_cfg_grp[0]))
 #define FLASHLESS_FLASH_WORKROUND  0
 

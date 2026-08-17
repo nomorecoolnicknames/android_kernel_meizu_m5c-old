@@ -82,7 +82,24 @@
 /* TODO: define your config for Sensor_ID == 5 here, if needed */
 #define CTP_CFG_GROUP6 {}
 
-#define TPD_CALIBRATION_MATRIX_ROTATION_NORMAL {-4096, 0, 3276800, 0, -4096, 5242880, 0, 0}
-#define TPD_CALIBRATION_MATRIX_ROTATION_FACTORY {-4096, 0, 3276800, 0, -4096, 5242880, 0, 0}
+/* forge (m5c): identity matrix - this panel needs NO coordinate rotation.
+ * tpd_calibrate() computes x = (m0*x + m1*y + m2) >> 12 and the same for y, so
+ * {4096,0,0, 0,4096,0} is x = x, y = y.
+ * Measured on hardware in three steps:
+ *   1. stock config_default here was {-4096,0,3276800,...} = x -> 800-x,
+ *      y -> 1280-y, i.e. a 180-degree rotation sized for an 800x1280 panel.
+ *      With our 720-wide panel that showed up as touch rotated 180 degrees.
+ *   2. adding TPD_WARP_X/Y (719-x) on top cancelled the rotation but left the
+ *      constant 800-719 = 81 px offset, seen as touch shifted ~85 px right.
+ *   3. fixing the matrix to 719/1279 with no warp inverted again: a tap on the
+ *      top-left corner reported X=683 Y=1267, confirmed by the owner.
+ * So the controller's raw coordinates already match the screen and any rotation
+ * is wrong. This also keeps the capacitive key row usable: the DT places the
+ * three tpd buttons at y=1400, outside the 1280-line panel, and a rotating
+ * matrix mapped that to a negative value which surfaced as a tap somewhere on
+ * screen instead of a key event.
+ */
+#define TPD_CALIBRATION_MATRIX_ROTATION_NORMAL {4096, 0, 0, 0, 4096, 0, 0, 0}
+#define TPD_CALIBRATION_MATRIX_ROTATION_FACTORY {4096, 0, 0, 0, 4096, 0, 0, 0}
 
 #endif /* _GT1X_CONFIG_H_ */

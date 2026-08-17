@@ -35,6 +35,7 @@
 #include "kd_imgsensor_errcode.h"
 
 #include "s5k5e8yxmipiraw_Sensor.h"
+#include "s5k5e8_otp_cal.h"
 
 /****************************Modify following Strings for debug****************************/
 #define PFX "s5k5e8yx_camera_sensor"
@@ -216,6 +217,54 @@ static void write_cmos_sensor_8(kal_uint16 addr, kal_uint8 para)
     iWriteRegI2C(pusendcmd , 3, imgsensor.i2c_write_id);
 }
 
+/*
+ * forge (m5c): raw register access for s5k5e8_otp_cal.c. Stock hardcodes the
+ * i2c write id 0x30 in its OTP driver; this phone's front module answers at
+ * 0x78 and moves itself to 0x5A during init, so the live id is used instead.
+ */
+unsigned int s5k5e8_otp_read_reg(unsigned int addr)
+{
+	return read_cmos_sensor((kal_uint32)addr);
+}
+
+void s5k5e8_otp_write_reg(unsigned int addr, unsigned int val)
+{
+	write_cmos_sensor_8((kal_uint16)addr, (kal_uint8)val);
+}
+
+/*
+ * Sensor id actually reported to kd_sensorlist: stock derives it from the
+ * module-vendor id in OTP page 4 so that the HAL gets the drvname of the
+ * matching module variant (s5k5e8{st,qh,holitech,sunwin}mipiraw).
+ */
+static unsigned int g_module_variant = S5K5E8_MODULE_NUM;
+
+static const UINT32 s5k5e8_variant_sensor_id[S5K5E8_MODULE_NUM] = {
+	[S5K5E8_MODULE_ST]       = S5K5E8_ST_SENSOR_ID,
+	[S5K5E8_MODULE_QH]       = S5K5E8_QH_SENSOR_ID,
+	[S5K5E8_MODULE_HOLITECH] = S5K5E8_HOLITECH_SENSOR_ID,
+	[S5K5E8_MODULE_SUNWIN]   = S5K5E8_SUNWIN_SENSOR_ID,
+};
+
+static UINT32 s5k5e8_resolve_variant(void)
+{
+	unsigned int module_id = s5k5e8_otp_get_module_id();
+	unsigned int variant = s5k5e8_otp_module_variant(module_id);
+
+	if (variant >= S5K5E8_MODULE_NUM) {
+		LOG_INF("unknown camera module id %u (OTP 0x0A07), falling back "
+			"to plain S5K5E8YX id 0x%x\n",
+			module_id, S5K5E8YX_SENSOR_ID);
+		g_module_variant = S5K5E8_MODULE_NUM;
+		return S5K5E8YX_SENSOR_ID;
+	}
+
+	g_module_variant = variant;
+	LOG_INF("camera module id %u -> variant %u, sensor id 0x%x\n",
+		module_id, variant, s5k5e8_variant_sensor_id[variant]);
+	s5k5e8_otp_cali(variant);
+	return s5k5e8_variant_sensor_id[variant];
+}
 
 static void set_dummy(void)
 {
@@ -1502,7 +1551,11 @@ static kal_uint32 get_imgsensor_id(UINT32 *sensor_id)
 				s5k5e8_read_static_register_from_otp();//wangjie, read otp data only one time
 				#endif
 				strcpy(camera_f_info,"JSL_S5K5E8");//module info: JSL
-				LOG_INF("i2c write id: 0x%x, sensor id: 0x%x\n", imgsensor.i2c_write_id,*sensor_id);	  
+				LOG_INF("i2c write id: 0x%x, sensor id: 0x%x\n", imgsensor.i2c_write_id,*sensor_id);
+				/* forge (m5c): report the module variant and read its
+				 * calibration while the module is still powered.
+				 */
+				*sensor_id = s5k5e8_resolve_variant();
 				return ERROR_NONE;
 			}	
 			LOG_INF("Read sensor id fail, id: 0x%x\n", imgsensor.i2c_write_id,*sensor_id);
@@ -1571,7 +1624,16 @@ static kal_uint32 open(void)
 	}		 
 	if (imgsensor_info.sensor_id != sensor_id)
 		return ERROR_SENSOR_CONNECT_FAIL;
-	
+
+	/* forge (m5c): the HAL may open without a preceding
+	 * SENSOR_FEATURE_CHECK_SENSOR_ID, so resolve the variant and fill its
+	 * cam_cal buffer here too. Both are no-ops once done.
+	 */
+	if (g_module_variant >= S5K5E8_MODULE_NUM)
+		(void)s5k5e8_resolve_variant();
+	else
+		s5k5e8_otp_cali(g_module_variant);
+
 	/* initail sequence write in  */
 	sensor_init();
 

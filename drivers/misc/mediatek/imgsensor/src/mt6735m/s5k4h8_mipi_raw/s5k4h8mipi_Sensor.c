@@ -35,6 +35,7 @@
 #include "kd_imgsensor_errcode.h"
 
 #include "s5k4h8mipi_Sensor.h"
+#include "s5k4h8_otp_cal.h"
 
 #define PFX "S5K4H8_camera_sensor"
 #include "misc/app_info.h"
@@ -4212,7 +4213,52 @@ static int Otp_Calibration(void){
 * GLOBALS AFFECTED
 *
 *************************************************************************/
-static kal_uint32 get_imgsensor_id(UINT32 *sensor_id) 
+/*
+ * forge (m5c): sensor id actually reported to kd_sensorlist. Stock derives it
+ * from the module-vendor id in the EEPROM so that the HAL gets the drvname of
+ * the matching module variant (s5k4h8{ofilm,st,holitech,sunwin}mipiraw) and
+ * can therefore pick the right per-module tuning and the right cam_cal node.
+ * S5K4H8_MODULE_NUM means "EEPROM unreadable / unknown vendor".
+ */
+static unsigned int g_module_variant = S5K4H8_MODULE_NUM;
+
+static const UINT32 s5k4h8_variant_sensor_id[S5K4H8_MODULE_NUM] = {
+	[S5K4H8_MODULE_OFILM]    = S5K4H8_OFILM_SENSOR_ID,
+	[S5K4H8_MODULE_ST]       = S5K4H8_ST_SENSOR_ID,
+	[S5K4H8_MODULE_HOLITECH] = S5K4H8_HOLITECH_SENSOR_ID,
+	[S5K4H8_MODULE_SUNWIN]   = S5K4H8_SUNWIN_SENSOR_ID,
+};
+
+/*
+ * Reads the module-vendor id from the EEPROM and caches the variant. Returns
+ * the sensor id that should be reported for it, falling back to the plain
+ * S5K4H8 id (which is also the OFILM variant's id) when the EEPROM cannot be
+ * read, so that a module we do not know about still enumerates.
+ */
+static UINT32 s5k4h8_resolve_variant(void)
+{
+	unsigned int module_id = s5k4h8_otp_get_module_id();
+	unsigned int variant = s5k4h8_otp_module_variant(module_id);
+
+	if (variant >= S5K4H8_MODULE_NUM) {
+		LOG_INF("unknown camera module id %u (EEPROM 0x0001), "
+			"falling back to plain S5K4H8 id 0x%x\n",
+			module_id, S5K4H8_SENSOR_ID);
+		g_module_variant = S5K4H8_MODULE_NUM;
+		/* restore the sensor's own i2c speed after talking to the EEPROM */
+		kdSetI2CSpeed(imgsensor_info.i2c_speed);
+		return S5K4H8_SENSOR_ID;
+	}
+
+	g_module_variant = variant;
+	LOG_INF("camera module id %u -> variant %u, sensor id 0x%x\n",
+		module_id, variant, s5k4h8_variant_sensor_id[variant]);
+	s5k4h8_otp_cali(variant);
+	kdSetI2CSpeed(imgsensor_info.i2c_speed);
+	return s5k4h8_variant_sensor_id[variant];
+}
+
+static kal_uint32 get_imgsensor_id(UINT32 *sensor_id)
 {
 	kal_uint8 i = 0;
     kal_uint8 retry = 1;
@@ -4233,6 +4279,10 @@ static kal_uint32 get_imgsensor_id(UINT32 *sensor_id)
                 set_hw_dev_flag(DEV_I2C_OTP_SLAVE);
                 #endif
                 app_info_set("camera_slave","S5K4H8-JSL");
+                /* forge (m5c): report the module variant, and read its
+                 * calibration while the module is still powered.
+                 */
+                *sensor_id = s5k4h8_resolve_variant();
                 return ERROR_NONE;
             }
             LOG_INF("Read sensor id fail, write id: 0x%x, sensor id = 0x%x\n", imgsensor.i2c_write_id,*sensor_id);
@@ -4297,6 +4347,19 @@ static kal_uint32 open(void)
     }        
     if (imgsensor_info.sensor_id != sensor_id)
         return ERROR_SENSOR_CONNECT_FAIL;
+
+	/* forge (m5c): the HAL may open the sensor without a preceding
+	 * SENSOR_FEATURE_CHECK_SENSOR_ID, so make sure the module variant is
+	 * resolved and its cam_cal buffer is filled here as well. Both are
+	 * no-ops once done.
+	 */
+	if (g_module_variant >= S5K4H8_MODULE_NUM) {
+		(void)s5k4h8_resolve_variant();
+	} else {
+		s5k4h8_otp_cali(g_module_variant);
+		kdSetI2CSpeed(imgsensor_info.i2c_speed);
+	}
+
 	/* initail sequence write in  */
 	sensor_init();
     /*jijin.wang add camera otp*/

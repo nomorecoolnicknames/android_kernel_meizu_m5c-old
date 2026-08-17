@@ -292,11 +292,28 @@ ACDK_KD_SENSOR_INIT_FUNCTION_STRUCT kdSensorList[MAX_NUM_OF_SUPPORT_SENSOR+1] =
 #if defined(S5K8AAYX_YUV)
     {S5K8AAYX_MIPI_SENSOR_ID, SENSOR_DRVNAME_S5K8AAYX_YUV, S5K8AAYX_PVI_YUV_SensorInit},
 #endif
-#if defined(S5K4H8_MIPI_RAW)
-    {S5K4H8_SENSOR_ID, SENSOR_DRVNAME_S5K4H8_MIPI_RAW, S5K4H8_MIPI_RAW_SensorInit},
-#endif
+/*
+ * forge (m5c): the camera HAL blobs of this phone address kernel sensor
+ * drivers by their INDEX in this array, and their index table is the one the
+ * stock kernel produced: four S5K5E8 module variants first, then four S5K4H8
+ * ones. With only "s5k4h8mipiraw" and "s5k5e8yxmipiraw" compiled in, index 0
+ * was our main sensor while the blob believed index 0 to be s5k5e8stmipiraw,
+ * so the main camera got the front sensor's 5 MP static info and tried to open
+ * /dev/S5K5E8_ST_OTP. Reproduce the stock list and order; both sensors have
+ * one driver each, which reports the variant sensor id it found in the module
+ * calibration (see device/meizu/m5c/M5C_CAMERA_OTP_LANE.md).
+ */
 #if defined(S5K5E8YX_MIPI_RAW)
-    {S5K5E8YX_SENSOR_ID, SENSOR_DRVNAME_S5K5E8YX_MIPI_RAW, S5K5E8YX_MIPI_RAW_SensorInit},
+    {S5K5E8_ST_SENSOR_ID, SENSOR_DRVNAME_S5K5E8_ST_MIPI_RAW, S5K5E8YX_MIPI_RAW_SensorInit},
+    {S5K5E8_QH_SENSOR_ID, SENSOR_DRVNAME_S5K5E8_QH_MIPI_RAW, S5K5E8YX_MIPI_RAW_SensorInit},
+    {S5K5E8_HOLITECH_SENSOR_ID, SENSOR_DRVNAME_S5K5E8_HOLITECH_MIPI_RAW, S5K5E8YX_MIPI_RAW_SensorInit},
+    {S5K5E8_SUNWIN_SENSOR_ID, SENSOR_DRVNAME_S5K5E8_SUNWIN_MIPI_RAW, S5K5E8YX_MIPI_RAW_SensorInit},
+#endif
+#if defined(S5K4H8_MIPI_RAW)
+    {S5K4H8_OFILM_SENSOR_ID, SENSOR_DRVNAME_S5K4H8_OFILM_MIPI_RAW, S5K4H8_MIPI_RAW_SensorInit},
+    {S5K4H8_ST_SENSOR_ID, SENSOR_DRVNAME_S5K4H8_ST_MIPI_RAW, S5K4H8_MIPI_RAW_SensorInit},
+    {S5K4H8_HOLITECH_SENSOR_ID, SENSOR_DRVNAME_S5K4H8_HOLITECH_MIPI_RAW, S5K4H8_MIPI_RAW_SensorInit},
+    {S5K4H8_SUNWIN_SENSOR_ID, SENSOR_DRVNAME_S5K4H8_SUNWIN_MIPI_RAW, S5K4H8_MIPI_RAW_SensorInit},
 #endif
 /*HI*/
 #if defined(HI841_MIPI_RAW)

@@ -177,6 +177,19 @@ NSFeature :  : RAWSensorInfo < _id >  :  : getFlickerPara \
 #define S5K8AAYX_SENSOR_ID                      0x08aa
 #define S5K4H8_SENSOR_ID                        0x4088
 #define S5K5E8YX_SENSOR_ID                      0x5E80
+/* forge (m5c): Meizu m5c ships four module variants per sensor. Stock reports
+ * a distinct sensor id per variant (base id + vendor index) so the HAL can
+ * pick per-module tuning and the matching cam_cal node. See
+ * device/meizu/m5c/M5C_CAMERA_OTP_LANE.md.
+ */
+#define S5K4H8_OFILM_SENSOR_ID                  0x4088
+#define S5K4H8_ST_SENSOR_ID                     0x4089
+#define S5K4H8_HOLITECH_SENSOR_ID               0x408A
+#define S5K4H8_SUNWIN_SENSOR_ID                 0x408B
+#define S5K5E8_ST_SENSOR_ID                     0x5E80
+#define S5K5E8_QH_SENSOR_ID                     0x5E81
+#define S5K5E8_HOLITECH_SENSOR_ID               0x5E82
+#define S5K5E8_SUNWIN_SENSOR_ID                 0x5E83
 /*HI*/
 #define HI841_SENSOR_ID                         0x0841
 #define HI707_SENSOR_ID                         0x00b8
@@ -335,6 +348,17 @@ NSFeature :  : RAWSensorInfo < _id >  :  : getFlickerPara \
 #define SENSOR_DRVNAME_S5K8AAYX_YUV             "s5k8aayxyuv"
 #define SENSOR_DRVNAME_S5K4H8_MIPI_RAW          "s5k4h8mipiraw"
 #define SENSOR_DRVNAME_S5K5E8YX_MIPI_RAW        "s5k5e8yxmipiraw"
+/* forge (m5c): the only eight sensor names libcameracustom.so of this phone
+ * knows about. Anything else leaves the HAL without per-sensor tuning.
+ */
+#define SENSOR_DRVNAME_S5K4H8_OFILM_MIPI_RAW    "s5k4h8ofilmmipiraw"
+#define SENSOR_DRVNAME_S5K4H8_ST_MIPI_RAW       "s5k4h8stmipiraw"
+#define SENSOR_DRVNAME_S5K4H8_HOLITECH_MIPI_RAW "s5k4h8holitechmipiraw"
+#define SENSOR_DRVNAME_S5K4H8_SUNWIN_MIPI_RAW   "s5k4h8sunwinmipiraw"
+#define SENSOR_DRVNAME_S5K5E8_ST_MIPI_RAW       "s5k5e8stmipiraw"
+#define SENSOR_DRVNAME_S5K5E8_QH_MIPI_RAW       "s5k5e8qhmipiraw"
+#define SENSOR_DRVNAME_S5K5E8_HOLITECH_MIPI_RAW "s5k5e8holitechmipiraw"
+#define SENSOR_DRVNAME_S5K5E8_SUNWIN_MIPI_RAW   "s5k5e8sunwinmipiraw"
 /*HI*/
 #define SENSOR_DRVNAME_HI841_MIPI_RAW           "hi841mipiraw"
 #define SENSOR_DRVNAME_HI707_YUV                "hi707yuv"

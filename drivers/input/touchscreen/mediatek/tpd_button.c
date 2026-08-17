@@ -7,16 +7,26 @@ static unsigned int tpd_keycnt;
 static int tpd_keys[TPD_VIRTUAL_KEY_MAX] = { 0 };
 
 static int tpd_keys_dim[TPD_VIRTUAL_KEY_MAX][4];	/* = {0}; */
+/*
+ * Emit the Android virtual-key table, "EV_KEY:code:cx:cy:w:h" per key.
+ * The returned length must match the string exactly: Android's VirtualKeyMap
+ * parser tokenises the whole buffer it is given and rejects the entire file as
+ * soon as it meets a token that is not "0x01", so any trailing padding costs
+ * us every virtual key. (The previous form re-printed the buffer into itself
+ * and summed the partial lengths, returning 150 for a 75-byte string.)
+ */
 static ssize_t mtk_virtual_keys_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	int i, j;
+	unsigned int i;
+	int len = 0;
 
-	for (i = 0, j = 0; i < tpd_keycnt; i++)
-		j += sprintf(buf, "%s%s:%d:%d:%d:%d:%d%s", buf,
-			     __stringify(EV_KEY), tpd_keys[i],
-			     tpd_keys_dim[i][0], tpd_keys_dim[i][1],
-			     tpd_keys_dim[i][2], tpd_keys_dim[i][3], (i == tpd_keycnt - 1 ? "\n" : ":"));
-	return j;
+	for (i = 0; i < tpd_keycnt; i++)
+		len += scnprintf(buf + len, PAGE_SIZE - len, "%s:%d:%d:%d:%d:%d%s",
+				 __stringify(EV_KEY), tpd_keys[i],
+				 tpd_keys_dim[i][0], tpd_keys_dim[i][1],
+				 tpd_keys_dim[i][2], tpd_keys_dim[i][3],
+				 (i == tpd_keycnt - 1 ? "\n" : ":"));
+	return len;
 }
 
 static struct kobj_attribute mtk_virtual_keys_attr = {

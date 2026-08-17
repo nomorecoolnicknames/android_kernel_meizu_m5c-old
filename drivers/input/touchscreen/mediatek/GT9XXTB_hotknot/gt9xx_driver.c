@@ -33,11 +33,6 @@ DEFINE_MUTEX(i2c_access);
 
 const u16 touch_key_array[] = TPD_KEYS;
 #define GTP_MAX_KEY_NUM (sizeof(touch_key_array)/sizeof(touch_key_array[0]))
-struct touch_virtual_key_map_t {
-	int x;
-	int y;
-};
-static struct touch_virtual_key_map_t maping[] = GTP_KEY_MAP_ARRAY;
 
 #if defined(CONFIG_GTP_SLIDE_WAKEUP)
 enum DOZE_T {
@@ -2061,6 +2056,68 @@ static void tpd_calibrate_driver(int *x, int *y)
 	*x = tx;
 }
 
+/*
+ * m5c capacitive key (Meizu mBack)
+ *
+ * The device tree still describes the 3-key reference row:
+ *   tpd-key-local     = <0x9e 0xfa 0xfb 0x00>	KEY_BACK, 250, 251
+ *   tpd-key-dim-local = centres (360,1400) (180,1400) (540,1400), 100x40
+ * All three windows sit at y = 1400, i.e. 120 px below the 720x1280 panel, so
+ * none of them can ever overlap a real finger. The phone itself has exactly
+ * ONE physical key, so whichever slot the controller raises we report the
+ * first device-tree code (KEY_BACK) - the other two codes (250, 251) mean
+ * nothing to Android.
+ *
+ * The key goes out on tpd->kpd ("mtk-tpd-kpd"), which
+ * /system/usr/keylayout/mtk-tpd-kpd.kl maps to Android BACK. It is
+ * deliberately NOT reported as a screen touch: the code this replaces
+ * synthesised a tpd_down() at the compile-time GTP_KEY_MAP_ARRAY coordinates
+ * {60,850}, {180,850}, {300,850} - a 480x800 reference-design table - which
+ * land inside this panel and surfaced the key press as a stray tap. Those
+ * coordinates also never matched the device-tree key windows, so
+ * tpd_button() could not turn them back into a key even in the recovery /
+ * factory boot modes where tpd_down() calls it.
+ */
+static void gtp_touch_key_report(bool down)
+{
+	static bool key_is_down;
+	unsigned int code;
+
+	if (down == key_is_down)
+		return;
+	if (tpd == NULL || tpd->kpd == NULL)
+		return;
+
+	key_is_down = down;
+	code = tpd_dts_data.tpd_key_local[0];
+	input_report_key(tpd->kpd, code, down ? 1 : 0);
+	input_sync(tpd->kpd);
+	pr_info("[mtk-tpd] gt9xx touch key -> code %u %s\n",
+		code, down ? "down" : "up");
+}
+
+/*
+ * True when a reported point falls inside one of the device-tree key windows.
+ * GT9xx firmware may announce the key either as a bit in the key byte that
+ * follows the coordinate records or as an ordinary coordinate record placed in
+ * the off-panel key band; this covers the second case.
+ */
+static bool gtp_is_touch_key_point(s32 x, s32 y)
+{
+	int i;
+
+	for (i = 0; i < tpd_dts_data.tpd_key_num && i < 4; i++) {
+		struct tpd_key_dim_local *k = &tpd_dts_data.tpd_key_dim_local[i];
+
+		if (x >= k->key_x - k->key_width / 2 &&
+		    x <= k->key_x + k->key_width / 2 &&
+		    y >= k->key_y - k->key_height / 2 &&
+		    y <= k->key_y + k->key_height / 2)
+			return true;
+	}
+	return false;
+}
+
 static int touch_event_handler(void *unused)
 {
 	struct sched_param param = {.sched_priority = RTPM_PRIO_TPD };
@@ -2071,11 +2128,11 @@ static int touch_event_handler(void *unused)
 	u8 touch_num = 0;
 	u8 finger = 0;
 	static u8 pre_touch;
-	static u8 pre_key;
 #if defined(CONFIG_GTP_WITH_PEN)
 	static u8 pre_pen;
 #endif
 	u8 key_value = 0;
+	bool key_down = false;
 	u8 *coor_data = NULL;
 	s32 input_x = 0;
 	s32 input_y = 0;
@@ -2397,30 +2454,17 @@ static int touch_event_handler(void *unused)
 			memcpy(&data[12], &buf[2], 8 * (touch_num - 1));
 		}
 
+		key_down = false;
 		if (tpd_dts_data.use_tpd_button) {
 			key_value = data[3 + 8 * touch_num];
 
-			if (key_value || pre_key) {
-				for (i = 0; i < TPD_KEY_COUNT; i++) {
-					if (key_value & (0x01 << i)) {
-						input_x = maping[i].x;
-						input_y = maping[i].y;
-						GTP_DEBUG("button =%d %d",
-							  input_x, input_y);
-						tpd_down(input_x,
-							 input_y,
-							 0, 0);
-					}
-				}
-
-				if ((pre_key != 0) && (key_value == 0))
-					tpd_up(0, 0, 0);
-
+			if (key_value) {
+				/* the key byte replaces the coordinate data */
+				key_down = true;
 				touch_num = 0;
 				pre_touch = 0;
 			}
 		}
-		pre_key = key_value;
 
 		GTP_DEBUG("pre_touch:%02x, finger:%02x.", pre_touch, finger);
 
@@ -2444,6 +2488,16 @@ static int touch_event_handler(void *unused)
 
 				GTP_DEBUG("caliberated:[X:%04d, Y:%04d]",
 					  input_x, input_y);
+
+				if (tpd_dts_data.use_tpd_button &&
+				    gtp_is_touch_key_point(input_x, input_y)) {
+					/*
+					 * Off-panel key band: report the key,
+					 * never a finger.
+					 */
+					key_down = true;
+					continue;
+				}
 
 #if defined(CONFIG_GTP_WITH_PEN)
 				id = coor_data[0];
@@ -2472,6 +2526,10 @@ static int touch_event_handler(void *unused)
 		} else {
 			GTP_DEBUG("Additional Eint!");
 		}
+
+		if (tpd_dts_data.use_tpd_button)
+			gtp_touch_key_report(key_down);
+
 		pre_touch = touch_num;
 
 		if (tpd != NULL && tpd->dev != NULL)

@@ -37,6 +37,8 @@
 #endif
 #include "kd_flashlight.h"
 #include <mach/mt_pbm.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/of.h>
 
 
 
@@ -653,13 +655,98 @@ static struct device *flashlight_device;
 static struct flashlight_data flashlight_private;
 static dev_t flashlight_devno;
 static struct cdev flashlight_cdev;
+
+/* ======================================================================== */
+/* Flash chip control pins (pinctrl states of the DT "flashlight" node) */
+/* ======================================================================== */
+static struct pinctrl *flashlight_pinctrl;
+static struct pinctrl_state *flashlight_pins[3][2];
+
+static const char * const flashlight_pin_names[3][2] = {
+	{ "hwen_low",  "hwen_high"  },
+	{ "torch_low", "torch_high" },
+	{ "flash_low", "flash_high" },
+};
+
+static int flashlight_gpio_init(struct platform_device *pdev)
+{
+	int pin, state;
+	int ret = 0;
+
+	flashlight_pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(flashlight_pinctrl)) {
+		pr_err(PFX "cannot get pinctrl, err = %d\n",
+		       (int)PTR_ERR(flashlight_pinctrl));
+		return PTR_ERR(flashlight_pinctrl);
+	}
+
+	for (pin = 0; pin < 3; pin++)
+		for (state = 0; state < 2; state++) {
+			flashlight_pins[pin][state] =
+			    pinctrl_lookup_state(flashlight_pinctrl,
+						 flashlight_pin_names[pin][state]);
+			if (IS_ERR(flashlight_pins[pin][state])) {
+				pr_err(PFX "cannot find pinctrl state %s, err = %d\n",
+				       flashlight_pin_names[pin][state],
+				       (int)PTR_ERR(flashlight_pins[pin][state]));
+				ret = PTR_ERR(flashlight_pins[pin][state]);
+			}
+		}
+
+	pr_info(PFX "flashlight_gpio_init done, ret = %d\n", ret);
+	return ret;
+}
+
+/*
+ * Drive one of the flash chip control pins. Returns 0 when the pinctrl state
+ * was really applied, -1 otherwise, so callers can tell a silent no-op from a
+ * real pin change.
+ */
+int flashlight_gpio_set(int pin, int state)
+{
+	int ret;
+
+	if (pin < 0 || pin > 2 || state < 0 || state > 1) {
+		pr_err(PFX "bad pin(%d) state(%d)\n", pin, state);
+		return -1;
+	}
+
+	if (IS_ERR_OR_NULL(flashlight_pinctrl) ||
+	    IS_ERR_OR_NULL(flashlight_pins[pin][state])) {
+		pr_err(PFX "pin(%d) state(%d) not available\n", pin, state);
+		return -1;
+	}
+
+	ret = pinctrl_select_state(flashlight_pinctrl, flashlight_pins[pin][state]);
+	pr_info(PFX "pin(%d) state(%d) ret(%d)\n", pin, state, ret);
+	return ret;
+}
+EXPORT_SYMBOL(flashlight_gpio_set);
+
 /* ======================================================================== */
 #define ALLOC_DEVNO
 static int flashlight_probe(struct platform_device *dev)
 {
 	int ret = 0, err = 0;
+	static bool chrdev_inited;
 
 	logI("[flashlight_probe] start ~");
+
+	/*
+	 * Two platform devices reach this driver: the legacy hand-registered
+	 * "kd_camera_flashlight" device (no of_node, no pinctrl) and the DT
+	 * node "mediatek,mt6737-flashlight" that owns the hwen/torch/flash
+	 * pins. Take the pins from whichever device carries them, and create
+	 * the char device only once.
+	 */
+	if (dev->dev.of_node)
+		flashlight_gpio_init(dev);
+
+	if (chrdev_inited) {
+		pr_info(PFX "char device already created, pins only\n");
+		return 0;
+	}
+	chrdev_inited = true;
 
 #ifdef ALLOC_DEVNO
 	ret = alloc_chrdev_region(&flashlight_devno, 0, 1, FLASHLIGHT_DEVNAME);
@@ -751,6 +838,13 @@ static void flashlight_shutdown(struct platform_device *dev)
 	logI("[flashlight_shutdown] Done ~");
 }
 
+#ifdef CONFIG_OF
+static const struct of_device_id FLASHLIGHT_of_match[] = {
+	{.compatible = "mediatek,mt6737-flashlight"},
+	{},
+};
+#endif
+
 static struct platform_driver flashlight_platform_driver = {
 	.probe = flashlight_probe,
 	.remove = flashlight_remove,
@@ -758,6 +852,9 @@ static struct platform_driver flashlight_platform_driver = {
 	.driver = {
 		   .name = FLASHLIGHT_DEVNAME,
 		   .owner = THIS_MODULE,
+#ifdef CONFIG_OF
+		   .of_match_table = FLASHLIGHT_of_match,
+#endif
 		   },
 };
 

@@ -80,25 +80,29 @@ static void work_timeOutFunc(struct work_struct *data);
 
 
 
+/*
+ * The main sensor flash is one physical SY7806 class chip on i2c 1-0063,
+ * owned by constant_flashlight/leds_strobe.c. The MTK camera HAL may address it
+ * as strobe id 1 or id 2, so forward id 2 to the same chip instead of dropping
+ * it on the floor the way the stock template does.
+ */
 static int FL_Enable(void)
 {
-/* flashEnable_sky81296_1(); */
-	PK_DBG("FL_Enable-");
-
-	return 0;
+	PK_INFO("FL_Enable, forwarding to the constant flashlight strobe\n");
+	return strobe_flash_enable();
 }
 
 static int FL_Disable(void)
 {
-	/* flashDisable_sky81296_1(); */
-
-	return 0;
+	PK_INFO("FL_Disable, forwarding to the constant flashlight strobe\n");
+	return strobe_flash_disable();
 }
 
 static int FL_dim_duty(kal_uint32 duty)
 {
-	/* setDuty_sky81296_1(duty); */
-	return 0;
+	PK_INFO("FL_dim_duty %d, forwarding to the constant flashlight strobe\n",
+		(int)duty);
+	return strobe_flash_set_duty((int)duty);
 }
 
 /*

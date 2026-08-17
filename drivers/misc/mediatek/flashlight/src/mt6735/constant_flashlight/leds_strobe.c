@@ -49,6 +49,15 @@
 #define PK_DBG(a, ...)
 #endif
 
+/*
+ * The flash path has no other trace in dmesg: every PK_DBG above compiles to
+ * nothing unless DEBUG_LEDS_STROBE is defined, and the flashlight core's logI()
+ * is disabled the same way. Keep the enable/disable path on pr_info so a torch
+ * press is always visible in dmesg.
+ */
+#define PK_LOG(fmt, arg...)         pr_info(TAG_NAME "%s: " fmt, __func__ , ##arg)
+#define PK_ERR(fmt, arg...)         pr_err(TAG_NAME "%s: " fmt, __func__ , ##arg)
+
 /******************************************************************************
  * local variables
 ******************************************************************************/
@@ -71,8 +80,50 @@ static DEFINE_MUTEX(g_strobeSem);
 
 static struct work_struct workTimeOut;
 
-/* #define FLASH_GPIO_ENF GPIO12 */
-/* #define FLASH_GPIO_ENT GPIO13 */
+/*
+ * The chip on i2c 1-0063 is an SY7806 class dual channel flash driver, not an
+ * LM3642: the stock kernel keeps the "leds-LM3642" i2c driver name and the
+ * LM3642_{read,write}_reg helpers, but its live code path (SY7806_set_torch_mode
+ * / SY7806_set_flash_mode / SY7806_close in the same file) programs the SY7806
+ * register map below and drives an HWEN pin, while the LM3642 register sequence
+ * (regs 0x09/0x0A) is dead code with no callers at all.
+ *
+ * Registers (SY7806 / AW3644 compatible):
+ */
+#define SY7806_REG_ENABLE	0x01
+#define SY7806_REG_FLASH_LED1	0x03
+#define SY7806_REG_FLASH_LED2	0x04
+#define SY7806_REG_TORCH_LED1	0x05
+#define SY7806_REG_TORCH_LED2	0x06
+#define SY7806_REG_TIMING	0x08
+#define SY7806_REG_FLAG1	0x0B
+#define SY7806_REG_DEV_ID	0x0C
+
+/* Enable register: bits [3:2] mode, bits [1:0] per-LED enable */
+#define SY7806_EN_OFF		0x00
+#define SY7806_EN_TORCH_BOTH	0x0B
+#define SY7806_EN_FLASH_BOTH	0x0F
+
+/* Timing register value used by stock (maximum flash timeout) */
+#define SY7806_TIMING_DEFAULT	0x0F
+
+/*
+ * Brightness tables lifted verbatim from the stock kernel image
+ * (/home/valakas/m5c/kernel-reverse/vmlinux.elf, .kernel @ 0xffffffc000b961a8).
+ * The HAL duty index selects the entry; duty <= 3 means torch, above that the
+ * flash table is used. Stock keeps LED1 and LED2 tables identical.
+ */
+static const u8 sy7806_torch_duty[] = {
+	0x23, 0x31, 0x6A, 0x7F
+};
+
+static const u8 sy7806_flash_duty[] = {
+	0x03, 0x08, 0x0C, 0x10, 0x19, 0x21, 0x2A, 0x32, 0x3B,
+	0x43, 0x4C, 0x54, 0x5D, 0x65, 0x6E, 0x77, 0x7F
+};
+
+#define SY7806_TORCH_DUTY_MAX	((int)ARRAY_SIZE(sy7806_torch_duty) - 1)
+#define SY7806_FLASH_DUTY_MAX	((int)ARRAY_SIZE(sy7806_flash_duty) - 1)
 
 static int g_bLtVersion;
 
@@ -252,64 +303,62 @@ int readReg(int reg)
 	return (int)val;
 }
 
+static int sy7806_write(u8 reg, u8 val)
+{
+	int ret;
+
+	if (LM3642_i2c_client == NULL) {
+		PK_ERR("no i2c client\n");
+		return -ENODEV;
+	}
+
+	ret = LM3642_write_reg(LM3642_i2c_client, reg, val);
+	if (ret < 0)
+		PK_ERR("write reg 0x%02x = 0x%02x failed, ret = %d\n", reg, val, ret);
+	return ret;
+}
+
 int FL_Enable(void)
 {
-	char buf[2];
-/* char bufR[2]; */
-	if (g_duty < 0)
-		g_duty = 0;
-	else if (g_duty > 16)
-		g_duty = 16;
-	if (g_duty <= 2) {
-		int val;
+	int duty = g_duty;
+	int ret;
 
-		if (g_bLtVersion == 1) {
-			if (g_duty == 0)
-				val = 3;
-			else if (g_duty == 1)
-				val = 5;
-			else	/* if(g_duty==2) */
-				val = 7;
-		} else {
-			if (g_duty == 0)
-				val = 1;
-			else if (g_duty == 1)
-				val = 2;
-			else	/* if(g_duty==2) */
-				val = 3;
-		}
-		buf[0] = 9;
-		buf[1] = val << 4;
-		/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
-		LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+	if (duty < 0)
+		duty = 0;
 
-		buf[0] = 10;
-		buf[1] = 0x02;
-		/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
-		LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+	/*
+	 * HWEN must be high before any i2c access: with HWEN low the chip is in
+	 * shutdown and does not answer on the bus at all.
+	 */
+	ret = flashlight_gpio_set(FLASHLIGHT_PIN_HWEN, FLASHLIGHT_PIN_HIGH);
+	if (ret)
+		PK_ERR("HWEN not raised (ret = %d), the chip will not answer\n", ret);
+
+	sy7806_write(SY7806_REG_TIMING, SY7806_TIMING_DEFAULT);
+
+	if (duty <= SY7806_TORCH_DUTY_MAX) {
+		u8 level = sy7806_torch_duty[duty];
+
+		sy7806_write(SY7806_REG_TORCH_LED1, level);
+		sy7806_write(SY7806_REG_TORCH_LED2, level);
+		sy7806_write(SY7806_REG_ENABLE, SY7806_EN_TORCH_BOTH);
+		PK_LOG("torch on, duty = %d, level = 0x%02x\n", duty, level);
 	} else {
-		int val;
+		u8 level;
 
-		val = (g_duty - 1);
-		buf[0] = 9;
-		buf[1] = val;
-		/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
-		LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+		if (duty > SY7806_FLASH_DUTY_MAX)
+			duty = SY7806_FLASH_DUTY_MAX;
+		level = sy7806_flash_duty[duty];
 
-		buf[0] = 10;
-		buf[1] = 0x03;
-		/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
-		LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+		sy7806_write(SY7806_REG_FLASH_LED1, level);
+		sy7806_write(SY7806_REG_FLASH_LED2, level);
+		sy7806_write(SY7806_REG_ENABLE, SY7806_EN_FLASH_BOTH);
+		PK_LOG("flash on, duty = %d, level = 0x%02x\n", duty, level);
 	}
-	PK_DBG(" FL_Enable line=%d\n", __LINE__);
 
-	readReg(0);
-	readReg(1);
-	readReg(6);
-	readReg(8);
-	readReg(9);
-	readReg(0xa);
-	readReg(0xb);
+	PK_LOG("readback enable = 0x%02x flag1 = 0x%02x devid = 0x%02x\n",
+	       readReg(SY7806_REG_ENABLE), readReg(SY7806_REG_FLAG1),
+	       readReg(SY7806_REG_DEV_ID));
 
 	return 0;
 }
@@ -318,20 +367,18 @@ int FL_Enable(void)
 
 int FL_Disable(void)
 {
-	char buf[2];
+	/* HWEN high so the write lands, then drop the chip back to shutdown. */
+	flashlight_gpio_set(FLASHLIGHT_PIN_HWEN, FLASHLIGHT_PIN_HIGH);
+	sy7806_write(SY7806_REG_ENABLE, SY7806_EN_OFF);
+	flashlight_gpio_set(FLASHLIGHT_PIN_HWEN, FLASHLIGHT_PIN_LOW);
 
-/* ///////////////////// */
-	buf[0] = 10;
-	buf[1] = 0x00;
-	/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
-	LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
-	PK_DBG(" FL_Disable line=%d\n", __LINE__);
+	PK_LOG("off\n");
 	return 0;
 }
 
 int FL_dim_duty(kal_uint32 duty)
 {
-	PK_DBG(" FL_dim_duty line=%d\n", __LINE__);
+	PK_LOG("duty = %d\n", (int)duty);
 	g_duty = duty;
 	return 0;
 }
@@ -341,54 +388,22 @@ int FL_dim_duty(kal_uint32 duty)
 
 int FL_Init(void)
 {
-	int regVal0;
-	char buf[2];
+	int devId;
+	int ret;
 
-	buf[0] = 0xa;
-	buf[1] = 0x0;
-	/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
-	LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+	ret = flashlight_gpio_set(FLASHLIGHT_PIN_HWEN, FLASHLIGHT_PIN_HIGH);
 
-	buf[0] = 0x8;
-	buf[1] = 0x47;
-	/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
-	LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+	sy7806_write(SY7806_REG_ENABLE, SY7806_EN_OFF);
+	sy7806_write(SY7806_REG_TIMING, SY7806_TIMING_DEFAULT);
 
-	buf[0] = 9;
-	buf[1] = 0x35;
-	/* iWriteRegI2C(buf , 2, STROBE_DEVICE_ID); */
-	LM3642_write_reg(LM3642_i2c_client, buf[0], buf[1]);
+	devId = readReg(SY7806_REG_DEV_ID);
+	g_bLtVersion = 0;
 
+	PK_LOG("hwen ret = %d, devid reg 0x0c = 0x%02x, flag1 = 0x%02x\n",
+	       ret, devId, readReg(SY7806_REG_FLAG1));
 
+	flashlight_gpio_set(FLASHLIGHT_PIN_HWEN, FLASHLIGHT_PIN_LOW);
 
-
-	/* static int LM3642_read_reg(struct i2c_client *client, u8 reg) */
-	/* regVal0 = readReg(0); */
-	regVal0 = LM3642_read_reg(LM3642_i2c_client, 0);
-
-	if (regVal0 == 1)
-		g_bLtVersion = 1;
-	else
-		g_bLtVersion = 0;
-
-
-	PK_DBG(" FL_Init regVal0=%d isLtVer=%d\n", regVal0, g_bLtVersion);
-
-
-/*
-	if(mt_set_gpio_mode(FLASH_GPIO_ENT,GPIO_MODE_00)){PK_DBG("[constant_flashlight] set gpio mode failed!!\n");}
-    if(mt_set_gpio_dir(FLASH_GPIO_ENT,GPIO_DIR_OUT)){PK_DBG("[constant_flashlight] set gpio dir failed!!\n");}
-    if(mt_set_gpio_out(FLASH_GPIO_ENT,GPIO_OUT_ZERO)){PK_DBG("[constant_flashlight] set gpio failed!!\n");}
-
-	if(mt_set_gpio_mode(FLASH_GPIO_ENF,GPIO_MODE_00)){PK_DBG("[constant_flashlight] set gpio mode failed!!\n");}
-    if(mt_set_gpio_dir(FLASH_GPIO_ENF,GPIO_DIR_OUT)){PK_DBG("[constant_flashlight] set gpio dir failed!!\n");}
-    if(mt_set_gpio_out(FLASH_GPIO_ENF,GPIO_OUT_ZERO)){PK_DBG("[constant_flashlight] set gpio failed!!\n");}
-    */
-
-
-
-
-/*	PK_DBG(" FL_Init line=%d\n", __LINE__); */
 	return 0;
 }
 
@@ -398,6 +413,30 @@ int FL_Uninit(void)
 	FL_Disable();
 	return 0;
 }
+
+/*
+ * Shared entry points so the strobeId == 2 handler
+ * (strobe_main_sid2_part1.c) drives the very same chip. The MTK camera HAL
+ * addresses the main sensor flash as strobe id 1 or id 2 depending on the
+ * blob; stock only programs the chip from the id 2 path, which is easy to miss.
+ */
+int strobe_flash_set_duty(int duty)
+{
+	return FL_dim_duty(duty);
+}
+EXPORT_SYMBOL(strobe_flash_set_duty);
+
+int strobe_flash_enable(void)
+{
+	return FL_Enable();
+}
+EXPORT_SYMBOL(strobe_flash_enable);
+
+int strobe_flash_disable(void)
+{
+	return FL_Disable();
+}
+EXPORT_SYMBOL(strobe_flash_disable);
 
 /*****************************************************************************
 User interface
@@ -445,24 +484,24 @@ static int constant_flashlight_ioctl(unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 
 	case FLASH_IOC_SET_TIME_OUT_TIME_MS:
-		PK_DBG("FLASH_IOC_SET_TIME_OUT_TIME_MS: %d\n", (int)arg);
+		PK_LOG("FLASH_IOC_SET_TIME_OUT_TIME_MS: %d\n", (int)arg);
 		g_timeOutTimeMs = arg;
 		break;
 
 
 	case FLASH_IOC_SET_DUTY:
-		PK_DBG("FLASHLIGHT_DUTY: %d\n", (int)arg);
+		PK_LOG("FLASHLIGHT_DUTY: %d\n", (int)arg);
 		FL_dim_duty(arg);
 		break;
 
 
 	case FLASH_IOC_SET_STEP:
-		PK_DBG("FLASH_IOC_SET_STEP: %d\n", (int)arg);
+		PK_LOG("FLASH_IOC_SET_STEP: %d\n", (int)arg);
 
 		break;
 
 	case FLASH_IOC_SET_ONOFF:
-		PK_DBG("FLASHLIGHT_ONOFF: %d\n", (int)arg);
+		PK_LOG("FLASHLIGHT_ONOFF: %d\n", (int)arg);
 		if (arg == 1) {
 
 			int s;
@@ -489,7 +528,7 @@ static int constant_flashlight_ioctl(unsigned int cmd, unsigned long arg)
 		}
 		break;
 	default:
-		PK_DBG(" No such command\n");
+		PK_LOG("no such command 0x%x\n", cmd);
 		i4RetValue = -EPERM;
 		break;
 	}
@@ -503,7 +542,7 @@ static int constant_flashlight_open(void *pArg)
 {
 	int i4RetValue = 0;
 
-	PK_DBG("constant_flashlight_open line=%d\n", __LINE__);
+	PK_LOG("open, strobe_Res = %d\n", strobe_Res);
 
 	if (0 == strobe_Res) {
 		FL_Init();

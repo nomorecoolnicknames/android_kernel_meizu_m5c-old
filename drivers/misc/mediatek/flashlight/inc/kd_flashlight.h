@@ -212,4 +212,24 @@ bool mtk_is_host_mode(void);
 int mt6332_OpenBoost4Flash(void);
 int mt6332_CloseBoost4Flash(void);
 
+/*
+ * Flash chip control pins, described by the DT node
+ * "mediatek,mt6737-flashlight" through the pinctrl states
+ * hwen_low/hwen_high, torch_low/torch_high, flash_low/flash_high.
+ * The numbering must stay in sync with flashlight_gpio_set().
+ */
+#define FLASHLIGHT_PIN_HWEN	0
+#define FLASHLIGHT_PIN_TORCH	1
+#define FLASHLIGHT_PIN_FLASH	2
+
+#define FLASHLIGHT_PIN_LOW	0
+#define FLASHLIGHT_PIN_HIGH	1
+
+int flashlight_gpio_set(int pin, int state);
+
+/* Constant flashlight strobe part (SY7806 class chip on i2c 1-0063) */
+int strobe_flash_set_duty(int duty);
+int strobe_flash_enable(void);
+int strobe_flash_disable(void);
+
 #endif

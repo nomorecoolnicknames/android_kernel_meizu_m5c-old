@@ -402,6 +402,8 @@ static int stk_ration_value = 1;
 #ifdef CONFIG_OF
 static const struct of_device_id alsps_of_match[] = {
     {.compatible = "mediatek,alsps2"},
+    /* forge: stock m5c DTB uses alsps@48 { compatible = "mediatek,alsps"; } */
+    {.compatible = "mediatek,alsps"},
     {},
 };
 #endif

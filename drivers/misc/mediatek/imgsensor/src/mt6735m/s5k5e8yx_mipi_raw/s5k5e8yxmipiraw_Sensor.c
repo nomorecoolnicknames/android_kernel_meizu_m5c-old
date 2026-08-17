@@ -161,7 +161,11 @@ static imgsensor_info_struct imgsensor_info = {
 	.sensor_output_dataformat = SENSOR_OUTPUT_FORMAT_RAW_Gr,
 	.mclk = 24,
 	.mipi_lane_num = SENSOR_MIPI_2_LANE,
-	.i2c_addr_table = {0x20,0x5a,0xff},
+	/* forge (m5c): stock binds camera_sub at i2c0 reg 0x3c = 8-bit write id 0x78,
+	 * which was missing here. 0x5a stays because this sensor reassigns its own
+	 * address during init ("modify device I2C address to 0x5a").
+	 */
+	.i2c_addr_table = {0x78,0x20,0x5a,0xff},
 };
 
 

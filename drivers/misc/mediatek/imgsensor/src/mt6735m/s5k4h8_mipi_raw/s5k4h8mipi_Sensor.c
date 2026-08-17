@@ -216,7 +216,13 @@ static imgsensor_info_struct imgsensor_info = {
 	.sensor_output_dataformat = SENSOR_OUTPUT_FORMAT_RAW_Gb,
 	.mclk = 24,
 	.mipi_lane_num = SENSOR_MIPI_4_LANE,
-	.i2c_addr_table = {0x5A, 0xff},
+	/* forge (m5c): stock binds camera_main at i2c0 reg 0x10, i.e. 8-bit write id
+	 * 0x20 (see device/meizu/m5c/M5C_CHIP_MAP.md). This table only had 0x5A, so
+	 * get_imgsensor_id() logged "Read sensor id fail, write id: 0x5a, sensor id
+	 * = 0x0" and the HAL enumerated zero cameras (MtkCam i4DeviceNum=0). Try the
+	 * real address first and keep 0x5A as a fallback for other revisions.
+	 */
+	.i2c_addr_table = {0x20, 0x5A, 0xff},
     .i2c_speed = 400, // i2c read/write speed
 };
 
@@ -233,7 +239,7 @@ static imgsensor_struct imgsensor = {
 	.test_pattern = KAL_FALSE,		//test pattern mode or not. KAL_FALSE for in test pattern mode, KAL_TRUE for normal output
 	.current_scenario_id = MSDK_SCENARIO_ID_CAMERA_PREVIEW,//current scenario id
 	.ihdr_en = KAL_FALSE, //sensor need support LE, SE with HDR feature
-	.i2c_write_id = 0x5A,
+	.i2c_write_id = 0x20,	/* forge: stock main camera address */
 };
 
 

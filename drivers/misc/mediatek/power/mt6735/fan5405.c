@@ -24,6 +24,12 @@ static int fan5405_driver_probe(struct i2c_client *client, const struct i2c_devi
 #ifdef CONFIG_OF
 static const struct of_device_id fan5405_of_match[] = {
 	{.compatible = "fan5405",},
+	/* forge: stock m5c DTB declares the node as
+	 * swithing_charger@6a { compatible = "mediatek,swithing_charger"; }
+	 * so without this entry the driver never binds and charger type
+	 * detection stays CHARGER_UNKNOWN -> USB peripheral never connects.
+	 */
+	{.compatible = "mediatek,swithing_charger",},
 	{},
 };
 

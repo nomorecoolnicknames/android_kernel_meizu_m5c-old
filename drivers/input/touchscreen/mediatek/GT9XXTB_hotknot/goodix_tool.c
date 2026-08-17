@@ -489,6 +489,14 @@ static s32 goodix_tool_write(struct file *filp, const char __user *buff, unsigne
 			return FAIL;
 	}
 #endif
+/* forge (m5c): gup_load_hotknot_system()/gup_load_fx_system()/
+ * gup_recovery_main_system()/gup_load_main_system() are defined in
+ * gt9xx_update.c only under CONFIG_GTP_COMPATIBLE_MODE (GT9F flashless
+ * chips), but this BSP copy calls them unconditionally, so vmlinux fails to
+ * link with CONFIG_GTP_COMPATIBLE_MODE=n. m5c has a GT917D with flash, so the
+ * caller gets the same guard as the callees instead of forcing compatible mode.
+ */
+#if defined(CONFIG_GTP_COMPATIBLE_MODE)
 	else if (19 == cmd_head.wr)	{
 		ret = copy_from_user(&cmd_head.data[0], &buff[CMD_HEAD_LENGTH], cmd_head.data_len);
 		if (0 == cmd_head.data[0]) {
@@ -505,6 +513,7 @@ static s32 goodix_tool_write(struct file *filp, const char __user *buff, unsigne
 				return FAIL;
 		}
 	}
+#endif
 #if defined(CONFIG_HOTKNOT_BLOCK_RW)
 	else if (21 == cmd_head.wr) {
 		u16 wait_hotknot_timeout = 0;

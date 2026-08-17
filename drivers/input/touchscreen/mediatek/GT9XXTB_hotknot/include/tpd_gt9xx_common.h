@@ -125,6 +125,15 @@ extern unsigned char gtp_default_FW_fl[];
 #define GTP_DEBUG_ARRAY_ON    0
 #define GTP_DEBUG_FUNC_ON     0
 */
+
+/* forge (m5c): the Goodix panel is mounted rotated 180 degrees relative to this
+ * driver's default axes -- verified on hardware (touch landed point-symmetric to
+ * the finger). These two make gt9xx_driver.c mirror both axes via
+ * TPD_WARP_X(x_max, x) = x_max - 1 - x and the same for Y. Note the pair of
+ * //#define lines further up sits inside a block comment and has no effect.
+ */
+#define TPD_WARP_X
+#define TPD_WARP_Y
 #define CFG_GROUP_LEN(p_cfg_grp)  (sizeof(p_cfg_grp) / sizeof(p_cfg_grp[0]))
 #define FLASHLESS_FLASH_WORKROUND  0
 
@@ -170,6 +179,19 @@ extern unsigned char gtp_default_FW_fl[];
 #define GTP_INT_TRIGGER  1
 #endif
 #define GTP_MAX_TOUCH      5
+
+/* forge (m5c): gt9xx_driver.c uses GTP_MAX_WIDTH/GTP_MAX_HEIGHT in the
+ * "driver does not send config" path as the fallback when reading the panel's
+ * own config over i2c fails, but this BSP copy never defines them, so the file
+ * does not compile with CONFIG_GTP_DRIVER_SEND_CFG=n. m5c panel is 720x1280
+ * (kernel reads TPD_RES_X/TPD_RES_Y from the stock DT).
+ */
+#ifndef GTP_MAX_WIDTH
+#define GTP_MAX_WIDTH      720
+#endif
+#ifndef GTP_MAX_HEIGHT
+#define GTP_MAX_HEIGHT     1280
+#endif
 
 #define TPD_POWER_SOURCE_CUSTOM	MT6328_POWER_LDO_VGP1	/* MT6323_POWER_LDO_VGP1 */
 #define VELOCITY_CUSTOM

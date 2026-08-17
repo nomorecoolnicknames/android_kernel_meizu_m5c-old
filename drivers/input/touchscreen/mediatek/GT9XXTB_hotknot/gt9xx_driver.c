@@ -396,7 +396,18 @@ static ssize_t gt91xx_config_read_proc(struct file *file, char *buffer, size_t c
 			    gtp_default_FW[13]);
 	}
 #else
+/* forge (m5c): gtp_default_FW[] lives in include/<GT9XXTB_FIRMWARE>/gt9xx_firmware.h
+ * and is only pulled in with CONFIG_GTP_HEADER_FW_UPDATE. We deliberately keep
+ * header-based firmware update OFF: flashing a firmware image taken from another
+ * panel into the GT917D could brick the touch controller, and stock m5c does not
+ * do it either (its log shows request_firmware of gt9xx_fw.bin failing and the
+ * driver carrying on). Only this diagnostic print needed the array.
+ */
+#if defined(CONFIG_GTP_HEADER_FW_UPDATE)
 	ptr += sprintf(ptr, "Driver VID: 0x%02X%02X\n", gtp_default_FW[12], gtp_default_FW[13]);
+#else
+	ptr += sprintf(ptr, "Driver VID: n/a (no built-in firmware)\n");
+#endif
 #endif
 	i2c_read_bytes(i2c_client_point, 0x41E4, temp_data, 1);
 	ptr += sprintf(ptr, "Boot status 0x%X\n", temp_data[0]);
